@@ -87,8 +87,20 @@
     <!-- Transaction Status Bar (shows during/after on-chain transactions) -->
     <div id="tx-status-bar" class="tx-status-bar" style="display: none;"></div>
 
+    <!-- Navigation Tabs -->
+    <nav class="main-nav-tabs">
+      <button class="nav-tab active" data-view="arena" id="tab-arena">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18.5 2h-1c-.55 0-1 .45-1 1v2.17l-3.32 3.32c-1.17-.6-2.67-.44-3.68.57L3.62 14.94a1.5 1.5 0 0 0 0 2.12l3.32 3.32a1.5 1.5 0 0 0 2.12 0l5.88-5.88c1.01-1.01 1.17-2.51.57-3.68l3.32-3.32H21c.55 0 1-.45 1-1V6.5a4.5 4.5 0 0 0-3.5-4.5z"/></svg>
+        Live Arena
+      </button>
+      <button class="nav-tab" data-view="history" id="tab-history">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        Transaction History
+      </button>
+    </nav>
+
     <!-- Main View Section -->
-    <main class="dashboard-layout">
+    <main class="dashboard-layout" id="view-arena">
       
       <!-- Left Container: Filter Bar + Active Auction Cards Grid -->
       <section class="main-pane">
@@ -175,6 +187,64 @@
             <div class="portfolio-empty">
               No active bids yet. Bid on items in the arena to track them here!
             </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Transaction History View (hidden by default) -->
+    <main class="dashboard-layout" id="view-history" style="display: none;">
+      <section class="main-pane">
+        <h2 style="font-size: 1.3rem; margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+          Transaction History
+        </h2>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0 0 1rem;">All bids, payments, settlements, and refunds across your auctions.</p>
+
+        <div class="history-filters">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="bid">Bids</button>
+          <button class="chip" data-filter="payment">Payments</button>
+          <button class="chip" data-filter="settlement">Settlements</button>
+          <button class="chip" data-filter="refund">Refunds</button>
+          <button class="chip" data-filter="creation">Creations</button>
+        </div>
+
+        <div id="history-list" class="history-list">
+          <div class="history-empty">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" fill="currentColor" style="opacity:0.15; margin-bottom:1rem;"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+            <p>No transactions yet. Start bidding to see your history here!</p>
+          </div>
+        </div>
+
+        <div class="history-summary" id="history-summary" style="display:none;">
+          <div class="summary-card">
+            <span class="summary-number" id="total-bids-count">0</span>
+            <span class="summary-label">Total Bids</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-number" id="total-spent">$0</span>
+            <span class="summary-label">Total Spent</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-number" id="auctions-won-count">0</span>
+            <span class="summary-label">Auctions Won</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-number" id="total-refunds">$0</span>
+            <span class="summary-label">Refunds Received</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <section class="sidebar-section">
+          <h3 class="sidebar-title">
+            <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
+            Quick Stats
+          </h3>
+          <div id="history-quick-stats" class="portfolio-list">
+            <div class="portfolio-empty">Connect wallet to see stats.</div>
           </div>
         </section>
       </aside>

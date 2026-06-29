@@ -182,12 +182,13 @@ function playSoundError() {
 // ===================== SMART CONTRACT CONFIGURATION =====================
 // Deploy the contract first, then paste your contract address here.
 // Run: npm run compile && npm run deploy:sepolia
-const CONTRACT_ADDRESS = "0x873DB75eCeA244e29eCc0fdD1A916183E6dc7Fb2";
+const CONTRACT_ADDRESS = "0xa9BdA562AAa4cC8E73b7Cb7600A89fAAA584Effb";
 
 const CONTRACT_ABI = [
   { "type": "constructor", "inputs": [], "stateMutability": "nonpayable" },
   { "type": "function", "name": "createAuction", "inputs": [{ "name": "_title", "type": "string" }, { "name": "_description", "type": "string" }, { "name": "_startingBid", "type": "uint256" }, { "name": "_minimumIncrement", "type": "uint256" }, { "name": "_duration", "type": "uint256" }], "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "nonpayable" },
   { "type": "function", "name": "placeBid", "inputs": [{ "name": "_auctionId", "type": "uint256" }], "outputs": [], "stateMutability": "payable" },
+  { "type": "function", "name": "payForAuction", "inputs": [{ "name": "_auctionId", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
   { "type": "function", "name": "settleAuction", "inputs": [{ "name": "_auctionId", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
   { "type": "function", "name": "claimRefund", "inputs": [{ "name": "_auctionId", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
   { "type": "function", "name": "cancelAuction", "inputs": [{ "name": "_auctionId", "type": "uint256" }], "outputs": [], "stateMutability": "nonpayable" },
@@ -741,6 +742,19 @@ async function placeBidOnChain(item, bidAmount) {
     updateSingleAuctionCard(item);
     updateStatsSidebar();
     syncScreenReaderTable();
+
+    storeTransaction({
+      type: 'bid',
+      auctionId: item.onChainId,
+      title: item.title,
+      amount: bidAmount,
+      ethAmount: usdToEth(bidAmount),
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      timestamp: Date.now(),
+      from: state.web3.address
+    });
+
     return true;
 
   } catch (e) {
@@ -799,6 +813,16 @@ function placeBidDemo(item, bidAmount) {
   updateSingleAuctionCard(item);
   updateStatsSidebar();
   syncScreenReaderTable();
+
+  storeTransaction({
+    type: 'bid',
+    auctionId: item.id,
+    title: item.title,
+    amount: bidAmount,
+    timestamp: Date.now(),
+    from: 'Demo User'
+  });
+
   return true;
 }
 
@@ -985,6 +1009,18 @@ async function cancelAuctionOnChain(auctionId) {
     showToast("Auction Cancelled", "All bidders have been refunded.", "success");
     logActivity(`🚫 Auction #${auctionId} cancelled by seller`, 'general');
     await syncSingleAuction(auctionId);
+
+    storeTransaction({
+      type: 'cancel',
+      auctionId: auctionId,
+      title: 'Auction #' + auctionId,
+      amount: 0,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      timestamp: Date.now(),
+      from: state.web3.address
+    });
+
     return true;
   } catch (e) {
     showTxPending(false);
@@ -1025,6 +1061,18 @@ async function settleAuctionOnChain(auctionId) {
     playSoundWin();
     showToast("Auction Settled!", "Funds transferred to seller.", "success");
     logActivity(`🏁 Auction #${auctionId} settled on-chain`, 'win');
+
+    storeTransaction({
+      type: 'settlement',
+      auctionId: auctionId,
+      title: 'Auction #' + auctionId,
+      amount: 0,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      timestamp: Date.now(),
+      from: state.web3.address
+    });
+
     return true;
   } catch (e) {
     showTxPending(false);
@@ -1064,6 +1112,18 @@ async function claimRefundOnChain(auctionId) {
     showToast("Refund Received!", "ETH has been returned to your wallet.", "success");
     logActivity(`💰 Refund claimed for auction #${auctionId}`, 'general');
     await refreshWalletBalance();
+
+    storeTransaction({
+      type: 'refund',
+      auctionId: auctionId,
+      title: 'Auction #' + auctionId,
+      amount: 0,
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      timestamp: Date.now(),
+      from: state.web3.address
+    });
+
     return true;
   } catch (e) {
     showTxPending(false);
@@ -1109,6 +1169,19 @@ async function createAuctionOnChain(title, description, startingBid, minIncremen
     updatePendingToast(pendingId, "Auction Launched!", `Confirmed in block ${receipt.blockNumber}`, 'success', tx.hash);
     updateTxStatusBar('confirmed', `Auction created in block #${receipt.blockNumber}`, tx.hash);
     showTxPending(false);
+
+    storeTransaction({
+      type: 'creation',
+      auctionId: onChainId,
+      title: title,
+      amount: startingBid,
+      ethAmount: usdToEth(startingBid),
+      txHash: tx.hash,
+      blockNumber: receipt.blockNumber,
+      timestamp: Date.now(),
+      from: state.web3.address
+    });
+
     return onChainId;
   } catch (e) {
     showTxPending(false);
@@ -1291,9 +1364,26 @@ function setupContractEventListeners() {
       item.currentBid = amountUsd;
 
       if (isUserWinner) {
-        showToast("YOU WON!", `You won "${item.title}" for $${amountUsd.toLocaleString()}!`, "success");
+        showToast("YOU WON!", `You won "${item.title}" for $${amountUsd.toLocaleString()}! Go to payment page.`, "success");
         playSoundWin();
         triggerConfetti();
+        storeTransaction({
+          type: 'settlement',
+          auctionId: Number(auctionId),
+          title: item.title,
+          amount: amountUsd,
+          ethAmount: usdToEth(amountUsd),
+          txHash: '',
+          timestamp: Date.now(),
+          from: winner,
+          isUserWinner: true
+        });
+        // Redirect to payment page after 3 seconds
+        setTimeout(() => {
+          if (confirm(`You won "${item.title}" for $${amountUsd.toLocaleString()}!\n\nGo to payment page to complete the transaction?`)) {
+            window.location.href = `payment.html?id=${auctionId}`;
+          }
+        }, 2000);
       } else {
         showToast("Auction Ended", `"${item.title}" won by ${winnerShort}`, "info");
       }
@@ -1555,7 +1645,11 @@ function updateCardState(card, item) {
       if (isSeller && !isWinner) {
         actionHtml = `<button class="btn btn-primary btn-settle" data-onchain-id="${item.onChainId}">Settle Auction</button>`;
       } else if (isWinner) {
-        actionHtml = `<div class="action-won-badge">You Won This Auction!</div>`;
+        actionHtml = `
+          <a href="payment.html?id=${item.onChainId}" class="btn btn-primary btn-pay-now" style="width:100%; text-align:center; text-decoration:none; display:block;">
+            💳 Pay Now — $${item.currentBid.toLocaleString()}
+          </a>
+        `;
       } else if (userHadBid) {
         actionHtml = `<button class="btn btn-secondary btn-refund" data-onchain-id="${item.onChainId}">Claim Refund</button>`;
       }
@@ -1933,13 +2027,158 @@ function syncScreenReaderTable() {
   `).join('');
 }
 
-// 16. Event Interconnections and Listeners
+// 16. Transaction History Manager
+function storeTransaction(tx) {
+  const history = JSON.parse(localStorage.getItem('aurabid_history') || '[]');
+  history.unshift(tx);
+  localStorage.setItem('aurabid_history', JSON.stringify(history.slice(0, 200)));
+}
+
+function getTransactionHistory() {
+  return JSON.parse(localStorage.getItem('aurabid_history') || '[]');
+}
+
+function formatHistoryTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return new Date(ts).toLocaleDateString();
+}
+
+function renderTransactionHistory(filter = 'all') {
+  const list = document.getElementById('history-list');
+  const summary = document.getElementById('history-summary');
+  if (!list) return;
+
+  let history = getTransactionHistory();
+  if (filter !== 'all') {
+    history = history.filter(tx => tx.type === filter);
+  }
+
+  if (history.length === 0) {
+    list.innerHTML = `
+      <div class="history-empty">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" fill="currentColor" style="opacity:0.15; margin-bottom:1rem;"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        <p>No transactions yet. Start bidding to see your history here!</p>
+      </div>`;
+    if (summary) summary.style.display = 'none';
+    return;
+  }
+
+  const icons = { bid: '💰', payment: '💳', settlement: '🏆', refund: '↩️', creation: '🚀', cancel: '🚫' };
+  const labels = { bid: 'Bid Placed', payment: 'Payment Made', settlement: 'Auction Settled', refund: 'Refund Received', creation: 'Auction Created', cancel: 'Auction Cancelled' };
+
+  list.innerHTML = history.map(tx => {
+    const icon = icons[tx.type] || '📋';
+    const label = labels[tx.type] || tx.type;
+    const isPositive = tx.type === 'refund' || tx.type === 'settlement';
+    const isNegative = tx.type === 'bid' || tx.type === 'payment';
+    const amountClass = isPositive ? 'positive' : isNegative ? 'negative' : 'neutral';
+    const amountPrefix = isPositive ? '+' : isNegative ? '-' : '';
+
+    return `
+      <div class="history-item">
+        <div class="history-icon ${tx.type}">${icon}</div>
+        <div class="history-info">
+          <div class="history-title">${escapeHtml(label)} — ${escapeHtml(tx.title || 'Auction #' + tx.auctionId)}</div>
+          <div class="history-subtitle">
+            ${tx.txHash ? `<a href="https://sepolia.etherscan.io/tx/${tx.txHash}" target="_blank" class="history-tx-link">${tx.txHash.slice(0, 10)}... ↗</a>` : 'Demo transaction'}
+            ${tx.blockNumber ? ` · Block #${tx.blockNumber}` : ''}
+          </div>
+        </div>
+        <div class="history-amount">
+          <div class="history-amount-value ${amountClass}">${amountPrefix}$${(tx.amount || 0).toLocaleString()}</div>
+          ${tx.ethAmount ? `<div class="history-amount-sub">≈ ${tx.ethAmount} ETH</div>` : ''}
+        </div>
+        <div class="history-time">${formatHistoryTime(tx.timestamp)}</div>
+      </div>`;
+  }).join('');
+
+  // Update summary
+  if (summary && filter === 'all') {
+    const allHistory = getTransactionHistory();
+    const totalBids = allHistory.filter(tx => tx.type === 'bid').length;
+    const totalSpent = allHistory.filter(tx => tx.type === 'payment').reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const wonCount = allHistory.filter(tx => tx.type === 'settlement' && tx.isUserWinner).length;
+    const refunds = allHistory.filter(tx => tx.type === 'refund').reduce((sum, tx) => sum + (tx.amount || 0), 0);
+
+    document.getElementById('total-bids-count').textContent = totalBids;
+    document.getElementById('total-spent').textContent = `$${totalSpent.toLocaleString()}`;
+    document.getElementById('auctions-won-count').textContent = wonCount;
+    document.getElementById('total-refunds').textContent = `$${refunds.toLocaleString()}`;
+    summary.style.display = 'grid';
+  } else if (summary) {
+    summary.style.display = 'none';
+  }
+}
+
+function renderHistoryQuickStats() {
+  const container = document.getElementById('history-quick-stats');
+  if (!container) return;
+  const history = getTransactionHistory();
+  if (history.length === 0) {
+    container.innerHTML = '<div class="portfolio-empty">No transactions yet.</div>';
+    return;
+  }
+
+  const totalTx = history.length;
+  const lastTx = history[0];
+  const lastTime = formatHistoryTime(lastTx.timestamp);
+
+  container.innerHTML = `
+    <div class="portfolio-item">
+      <div><div class="portfolio-item-title">Total Transactions</div></div>
+      <span class="portfolio-item-price">${totalTx}</span>
+    </div>
+    <div class="portfolio-item">
+      <div><div class="portfolio-item-title">Last Activity</div></div>
+      <span class="portfolio-item-price" style="font-size:0.7rem;">${lastTime}</span>
+    </div>
+  `;
+}
+
+// 17. Navigation Tab Switching
+function setupNavigation() {
+  const tabs = document.querySelectorAll('.nav-tab');
+  const arenaView = document.getElementById('view-arena');
+  const historyView = document.getElementById('view-history');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const view = tab.dataset.view;
+      if (view === 'arena') {
+        arenaView.style.display = '';
+        historyView.style.display = 'none';
+      } else {
+        arenaView.style.display = 'none';
+        historyView.style.display = '';
+        renderTransactionHistory();
+        renderHistoryQuickStats();
+      }
+    });
+  });
+
+  // History filter chips
+  document.querySelectorAll('.history-filters .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.history-filters .chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      renderTransactionHistory(chip.dataset.filter);
+    });
+  });
+}
+
+// 18. Event Interconnections and Listeners
 document.addEventListener('DOMContentLoaded', () => {
   // Initial displays
   renderAllAuctionsGrid();
   updateWalletUI();
   updateStatsSidebar();
   syncScreenReaderTable();
+  setupNavigation();
   logActivity("🌐 AuraBid connection established. Connect your Web3 wallet to begin bidding.", "general");
   if (CONTRACT_ADDRESS === "0x0000000000000000000000000000000000000000") {
     logActivity("📋 No contract address configured. Deploy contract and paste address in app.js.", "general");

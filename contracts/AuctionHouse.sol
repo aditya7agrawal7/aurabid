@@ -200,6 +200,23 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
         }
     }
 
+    function payForAuction(uint256 _auctionId) external nonReentrant auctionExists(_auctionId) {
+        Auction storage auction = auctions[_auctionId];
+
+        if (auction.settled) revert AuctionAlreadySettled();
+        if (auction.cancelled) revert AuctionWasCancelled();
+        if (block.timestamp < auction.endTime) revert AuctionStillActive();
+        if (msg.sender != auction.highestBidder) revert NotSeller();
+
+        auction.settled = true;
+
+        uint256 sellerProceeds = auction.highestBid;
+        (bool success, ) = auction.seller.call{value: sellerProceeds}("");
+        if (!success) revert TransferFailed();
+
+        emit AuctionSettled(_auctionId, auction.highestBidder, auction.highestBid);
+    }
+
     function claimRefund(uint256 _auctionId) external nonReentrant auctionExists(_auctionId) {
         Auction storage auction = auctions[_auctionId];
 

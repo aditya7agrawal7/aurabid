@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraBid | Complete Payment</title>
+  <link rel="stylesheet" href="index.css">
+  <style>
+    body { background: var(--bg-deep, #0a0e1e); color: var(--text-primary, #e2e8f0); font-family: 'Outfit', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
+    .payment-container { max-width: 520px; width: 100%; padding: 2rem; }
+    .payment-card { background: var(--glass-bg, rgba(18, 22, 42, 0.85)); border: 1px solid var(--glass-border, rgba(255,255,255,0.08)); border-radius: 20px; padding: 2.5rem; backdrop-filter: blur(20px); box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .payment-header { text-align: center; margin-bottom: 2rem; }
+    .payment-header h1 { font-size: 1.6rem; margin: 0 0 0.5rem; background: linear-gradient(135deg, #2ec4b6, #9d4ede); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .payment-header p { color: var(--text-muted, #8892a4); font-size: 0.85rem; margin: 0; }
+    .payment-section { margin-bottom: 1.5rem; }
+    .payment-section-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted, #8892a4); margin-bottom: 0.75rem; }
+    .payment-detail { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .payment-detail:last-child { border-bottom: none; }
+    .payment-detail-label { color: var(--text-secondary, #a0aec0); font-size: 0.85rem; }
+    .payment-detail-value { color: var(--text-primary, #e2e8f0); font-weight: 600; font-size: 0.9rem; }
+    .payment-detail-value.amount { font-size: 1.4rem; background: linear-gradient(135deg, #2ec4b6, #9d4ede); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .payment-detail-value small { display: block; font-size: 0.75rem; color: var(--text-muted, #8892a4); font-weight: 400; margin-top: 2px; -webkit-text-fill-color: var(--text-muted, #8892a4); }
+    .payment-actions { margin-top: 2rem; }
+    .btn-pay { width: 100%; padding: 1rem; font-size: 1rem; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; background: linear-gradient(135deg, #2ec4b6, #9d4ede); color: white; letter-spacing: 0.5px; transition: all 0.3s; }
+    .btn-pay:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(46,196,182,0.3); }
+    .btn-pay:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-pay.processing { background: linear-gradient(135deg, #ff9f1c, #e63946); }
+    .btn-back { display: block; text-align: center; margin-top: 1rem; color: var(--text-muted, #8892a4); text-decoration: none; font-size: 0.85rem; transition: color 0.2s; }
+    .btn-back:hover { color: var(--text-primary, #e2e8f0); }
+    .tx-status-section { display: none; margin-top: 1.5rem; padding: 1rem; border-radius: 12px; text-align: center; }
+    .tx-status-section.pending { display: block; background: rgba(255,159,28,0.1); border: 1px solid rgba(255,159,28,0.2); }
+    .tx-status-section.success { display: block; background: rgba(46,196,182,0.1); border: 1px solid rgba(46,196,182,0.2); }
+    .tx-status-section.error { display: block; background: rgba(230,57,70,0.1); border: 1px solid rgba(230,57,70,0.2); }
+    .tx-status-section .spinner { width: 32px; height: 32px; border: 3px solid rgba(255,159,28,0.2); border-top-color: #ff9f1c; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 0.75rem; }
+    .tx-status-section .status-text { font-size: 0.85rem; font-weight: 500; }
+    .tx-status-section a { color: #8fa8f8; text-decoration: underline; }
+    .success-check { font-size: 3rem; margin-bottom: 0.5rem; }
+    .wallet-warning { text-align: center; padding: 2rem; color: var(--text-muted); }
+    .wallet-warning p { margin: 0.5rem 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <canvas id="confetti-canvas" class="confetti-canvas" aria-hidden="true"></canvas>
+  <div class="payment-container">
+    <div class="payment-card" id="payment-card">
+      <div class="payment-header">
+        <h1>Complete Payment</h1>
+        <p>Finalize your auction win and transfer payment to seller</p>
+      </div>
+
+      <div id="payment-content">
+        <div class="wallet-warning">
+          <p>Connect your wallet to view payment details.</p>
+          <button class="btn btn-primary" id="connect-wallet-btn" style="margin-top:1rem;">Connect Wallet</button>
+        </div>
+      </div>
+
+      <div id="payment-details" style="display:none;">
+        <div class="payment-section">
+          <div class="payment-section-title">Auction Details</div>
+          <div class="payment-detail">
+            <span class="payment-detail-label">Item</span>
+            <span class="payment-detail-value" id="pay-title">-</span>
+          </div>
+          <div class="payment-detail">
+            <span class="payment-detail-label">Auction ID</span>
+            <span class="payment-detail-value" id="pay-auction-id">-</span>
+          </div>
+          <div class="payment-detail">
+            <span class="payment-detail-label">Seller</span>
+            <span class="payment-detail-value" id="pay-seller">-</span>
+          </div>
+        </div>
+
+        <div class="payment-section">
+          <div class="payment-section-title">Payment Summary</div>
+          <div class="payment-detail">
+            <span class="payment-detail-label">Your Winning Bid</span>
+            <span class="payment-detail-value amount" id="pay-amount">-</span>
+          </div>
+          <div class="payment-detail">
+            <span class="payment-detail-label">Network</span>
+            <span class="payment-detail-value" id="pay-network">Sepolia Testnet</span>
+          </div>
+        </div>
+
+        <div class="payment-actions">
+          <button class="btn-pay" id="pay-btn">Pay Now</button>
+        </div>
+      </div>
+
+      <div class="tx-status-section" id="tx-status">
+        <div class="spinner" id="tx-spinner"></div>
+        <div class="status-text" id="tx-status-text">Waiting for wallet confirmation...</div>
+      </div>
+
+      <div id="payment-success" style="display:none; text-align:center; padding: 2rem 0;">
+        <div class="success-check">✅</div>
+        <h2 style="margin:0.5rem 0; font-size:1.3rem;">Payment Complete!</h2>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin:0.5rem 0 1.5rem;">Your payment has been confirmed on-chain. The seller has received the funds.</p>
+        <div id="success-details"></div>
+        <a href="index.html" class="btn-back">← Back to Arena</a>
+      </div>
+
+      <div id="payment-error" style="display:none; text-align:center; padding: 2rem 0;">
+        <div style="font-size:3rem;">❌</div>
+        <h2 style="margin:0.5rem 0; font-size:1.3rem;">Payment Failed</h2>
+        <p style="color:var(--text-muted); font-size:0.85rem;" id="error-message">Something went wrong.</p>
+        <button class="btn btn-primary" id="retry-btn" style="margin-top:1rem;">Retry Payment</button>
+        <a href="index.html" class="btn-back">← Back to Arena</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="assertive"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <script src="payment.js"></script>
+</body>
+</html>
