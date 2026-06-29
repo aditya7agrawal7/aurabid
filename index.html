@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AuraBid - Premium real-time live bidding auction dashboard with procedural dynamic artwork, rival bidding simulation, audio cues, and instant sniping prevention.">
+  <title>AuraBid | Live Real-time Bidding & Auction Arena</title>
+  
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- Full-page Canvas overlay for Confetti celebration on auction win -->
+  <canvas id="confetti-canvas" class="confetti-canvas" aria-hidden="true"></canvas>
+
+  <!-- Main Application Wrapper -->
+  <div class="app-container">
+    
+    <!-- App Navigation Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <!-- Custom Gavel / Auction SVG Icon -->
+        <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
+          <path fill="currentColor" d="M18.5 2h-1c-.55 0-1 .45-1 1v2.17l-3.32 3.32c-1.17-.6-2.67-.44-3.68.57L3.62 14.94a1.5 1.5 0 0 0 0 2.12l3.32 3.32a1.5 1.5 0 0 0 2.12 0l5.88-5.88c1.01-1.01 1.17-2.51.57-3.68l3.32-3.32H21c.55 0 1-.45 1-1V6.5a4.5 4.5 0 0 0-3.5-4.5zM7.98 19.32l-3.32-3.32 1.94-1.94 3.32 3.32-1.94 1.94zm7.98-7.98l-5.88 5.88-3.32-3.32 5.88-5.88c.36-.36.95-.36 1.31 0l2.01 2.01c.36.36.36.95 0 1.31zM3 21h12a1 1 0 0 1 0 2H3a1 1 0 0 1 0-2z"/>
+        </svg>
+        <span class="logo-text">AuraBid</span>
+      </div>
+      
+      <div class="header-actions">
+        <!-- Sound Synthesizer Control -->
+        <button id="sound-toggle" class="btn btn-secondary btn-icon" title="Toggle Sound Feedback" aria-label="Toggle Sound Feedback">
+          <!-- Volume High SVG Icon (Default) -->
+          <svg id="volume-high-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+          </svg>
+          <!-- Volume Muted SVG Icon (Hidden initially) -->
+          <svg id="volume-muted-icon" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.21.05-.42.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+          </svg>
+        </button>
+
+        <!-- Web3 Wallet Connect Button (Disconnected State) -->
+        <button id="connect-wallet-btn" class="btn btn-wallet" title="Connect your Web3 wallet (MetaMask, etc.)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+          </svg>
+          <span id="connect-wallet-text">Connect Wallet</span>
+        </button>
+
+        <!-- Web3 Wallet HUD (Connected State — hidden until connected) -->
+        <div id="wallet-hud" class="wallet-hud wallet-web3" style="display: none;" title="Your connected Web3 wallet">
+          <div class="wallet-hud-top">
+            <span id="network-badge" class="network-badge">
+              <span class="network-dot"></span>
+              <span id="network-name">Ethereum</span>
+            </span>
+            <span id="tx-pending-indicator" class="tx-pending-indicator" style="display: none;">
+              <span class="tx-spinner-small"></span>
+              TX
+            </span>
+            <button id="disconnect-wallet-btn" class="btn-disconnect" title="Disconnect wallet" aria-label="Disconnect wallet">&times;</button>
+          </div>
+          <div class="wallet-hud-body">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="color: var(--accent-secondary); flex-shrink: 0;">
+              <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+            <div style="display: flex; flex-direction: column; min-width: 0;">
+              <span id="wallet-address" class="wallet-address" title="">0x0000…0000</span>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span id="wallet-amount" class="wallet-amount">0.00 ETH</span>
+                <span id="wallet-usd" class="wallet-usd">≈ $0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Listing Button -->
+        <button id="create-listing-btn" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          </svg>
+          Create Listing
+        </button>
+      </div>
+    </header>
+
+    <!-- Main View Section -->
+    <main class="dashboard-layout">
+      
+      <!-- Left Container: Filter Bar + Active Auction Cards Grid -->
+      <section class="main-pane">
+        
+        <!-- Filters Bar (Category filter & search input) -->
+        <div class="filters-bar">
+          <div class="search-input-wrapper">
+            <svg class="search-icon-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+            </svg>
+            <input type="search" id="search-input" class="search-input" placeholder="Search live auctions..." aria-label="Search live auctions">
+          </div>
+
+          <nav class="filter-chips" aria-label="Auction Category Filter">
+            <button class="chip active" data-category="all">All</button>
+            <button class="chip" data-category="tech">Tech</button>
+            <button class="chip" data-category="art">Digital Art</button>
+            <button class="chip" data-category="collectibles">Collectibles</button>
+            <button class="chip" data-category="fashion">Fashion</button>
+          </nav>
+        </div>
+
+        <!-- Semantic Header for Live Auctions -->
+        <h2 style="font-size: 1.3rem; margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--status-danger); box-shadow:0 0 10px var(--status-danger)"></span>
+          Live Bidding Arena
+        </h2>
+
+        <!-- Active Grid for cards (Rendered dynamically via app.js) -->
+        <div id="auctions-grid" class="auctions-grid">
+          <!-- Loading state / Fallback placeholder -->
+          <div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--text-muted);">
+            Initializing connection to bidding network...
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Container: Sidebar for Tickers and Personal Dashboard -->
+      <aside class="sidebar">
+        
+        <!-- Live Bid Feed Ticker -->
+        <section class="sidebar-section" aria-labelledby="ticker-header">
+          <h3 id="ticker-header" class="sidebar-title">
+            <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z"/>
+            </svg>
+            Live Global Feed
+          </h3>
+          <div id="activity-feed" class="activity-feed custom-scrollbar" aria-live="polite">
+            <!-- Feed activities inserted dynamically via app.js -->
+            <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 1rem;">
+              Connecting stream...
+            </div>
+          </div>
+        </section>
+
+        <!-- User Portfolio & Stats -->
+        <section class="sidebar-section" aria-labelledby="portfolio-header">
+          <h3 id="portfolio-header" class="sidebar-title">
+            <svg class="sidebar-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+            </svg>
+            My Bidding Stats
+          </h3>
+
+          <div class="portfolio-stats">
+            <div class="stat-card" title="Auctions you are currently winning">
+              <span id="winning-count" class="stat-number green">0</span>
+              <span class="stat-label">Winning</span>
+            </div>
+            <div class="stat-card" title="Auctions where you've been outbid">
+              <span id="outbid-count" class="stat-number orange">0</span>
+              <span class="stat-label">Outbid</span>
+            </div>
+            <div class="stat-card" title="Auctions won and claimed by you">
+              <span id="wins-count" class="stat-number purple">0</span>
+              <span class="stat-label">Wins</span>
+            </div>
+          </div>
+
+          <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; letter-spacing: 0.5px;">My Target Items</h4>
+          <div id="portfolio-list" class="portfolio-list custom-scrollbar">
+            <!-- Portfolio items rendered here dynamically -->
+            <div class="portfolio-empty">
+              No active bids yet. Bid on items in the arena to track them here!
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Create Listing Modal Overlay -->
+  <div id="create-modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-title" class="modal-title">Launch Live Auction</h2>
+        <button id="modal-close-btn" class="modal-close" aria-label="Close modal">&times;</button>
+      </div>
+
+      <form id="create-listing-form" novalidate>
+        <div class="form-group">
+          <label for="item-title" class="form-label">Item Title</label>
+          <input type="text" id="item-title" class="form-control" placeholder="e.g. Neo-Matrix Holographic Key" required>
+        </div>
+
+        <div class="form-group">
+          <label for="item-desc" class="form-label">Description</label>
+          <textarea id="item-desc" class="form-control" placeholder="Tell bidders why they should battle for this unique asset..." required></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="item-starting-bid" class="form-label">Starting Bid ($)</label>
+            <input type="number" id="item-starting-bid" class="form-control" min="1" value="150" required>
+          </div>
+          <div class="form-group">
+            <label for="item-duration" class="form-label">Duration (seconds)</label>
+            <input type="number" id="item-duration" class="form-control" min="30" max="600" value="90" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="item-category" class="form-label">Category</label>
+            <select id="item-category" class="form-control" style="background: rgb(24, 28, 48);" required>
+              <option value="tech">Tech</option>
+              <option value="art">Digital Art</option>
+              <option value="collectibles" selected>Collectibles</option>
+              <option value="fashion">Fashion</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="item-increment" class="form-label">Min Bid Increment ($)</label>
+            <input type="number" id="item-increment" class="form-control" min="1" value="10" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Digital Artwork Preset</label>
+          <div class="artwork-presets-grid" id="artwork-presets">
+            <!-- Dynamic presets rendered here -->
+          </div>
+          <input type="hidden" id="selected-gradient" value="gradient-1">
+        </div>
+
+        <div class="form-actions">
+          <button type="button" id="form-cancel-btn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Publish Auction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Stack -->
+  <div id="toast-container" class="toast-container" aria-live="assertive"></div>
+
+  <!-- Accessible semantic details table for search engines and Screen Readers (Hidden visually) -->
+  <div style="position: absolute; left: -9999px;" aria-hidden="false">
+    <h2>AuraBid Interactive Live Auction Registry Table</h2>
+    <table id="screen-reader-table">
+      <thead>
+        <tr>
+          <th scope="col">Auction Item</th>
+          <th scope="col">Category</th>
+          <th scope="col">Current Bid</th>
+          <th scope="col">Time Remaining</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody id="screen-reader-table-body">
+        <!-- Kept synced with active state in app.js -->
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Ethers.js for Web3 Blockchain Wallet Integration -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+
+  <!-- App logic JavaScript -->
+  <script src="app.js"></script>
+</body>
+</html>
