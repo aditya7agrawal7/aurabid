@@ -440,6 +440,11 @@ function disconnectWallet() {
   document.getElementById('connect-wallet-text').textContent = 'Connect Wallet';
   document.getElementById('wallet-hud').style.display = 'none';
 
+  if (AIAgent.active) {
+    AIAgent.toggleAgent(false);
+    document.getElementById('ai-toggle').checked = false;
+  }
+
   updateWalletUI();
   showToast('Wallet Disconnected', 'Reverted to demo mode with $5,000 credits.', 'info');
   logActivity('🔌 Wallet disconnected. Using demo balance.', 'general');
@@ -1338,6 +1343,13 @@ function setupContractEventListeners() {
       updateSingleAuctionCard(item);
       updateStatsSidebar();
       syncScreenReaderTable();
+
+      // AI agent: detect if someone outbid us, log and consider re-bid
+      if (AIAgent.active && !isUserBid && item.bids[0]?.bidder === 'You') {
+        AIAgent.log('⚔️', `Outbid on <strong>"${item.title}"</strong> by ${bidderShort} — $${amountUsd.toLocaleString()}`);
+        showToast('AI Outbid', `Someone outbid the AI on "${item.title}"`, 'warning');
+        // The next tick will decide if AI should re-bid
+      }
     }
   });
 
@@ -1368,6 +1380,9 @@ function setupContractEventListeners() {
         playSoundWin();
         triggerConfetti();
         logActivity(`🏆 YOU WON "${item.title}" for $${amountUsd.toLocaleString()}! Redirecting to payment.`, 'win');
+        AIAgent.log('🏆', `WON auction <strong>"${item.title}"</strong> for $${amountUsd.toLocaleString()}!`);
+        AIAgent.auctionsWon++;
+        AIAgent.updateStats();
         storeTransaction({
           type: 'settlement',
           auctionId: Number(auctionId),
@@ -1379,12 +1394,12 @@ function setupContractEventListeners() {
           from: winner,
           isUserWinner: true
         });
-        // Auto-redirect to payment page
         setTimeout(() => {
           window.location.href = `payment.html?id=${auctionId}`;
         }, 2500);
       } else {
         showToast("Auction Ended", `"${item.title}" won by ${winnerShort}`, "info");
+        AIAgent.log('❌', `Lost auction <strong>"${item.title}"</strong> — won by ${winnerShort}`);
       }
 
       updateSingleAuctionCard(item);
@@ -2192,7 +2207,239 @@ function setupNavigation() {
   });
 }
 
-// 18. Event Interconnections and Listeners
+// 18. AI Bidding Agent
+const AIAgent = {
+  active: false,
+  strategy: 'balanced',
+  maxBidPerAuction: 500,
+  totalBudget: 2000,
+  targetCategory: 'all',
+  bidsPlaced: 0,
+  auctionsWon: 0,
+  totalSpent: 0,
+  bidHistory: [],
+  logEntries: [],
+  tickInterval: null,
+
+  strategies: {
+    conservative: {
+      bidChance: 0.15,
+      maxBidMultiplier: 0.8,
+      urgencyThreshold: 20,
+      label: 'Conservative',
+      desc: 'Low risk, bids less frequently, targets undervalued items'
+    },
+    balanced: {
+      bidChance: 0.35,
+      maxBidMultiplier: 1.0,
+      urgencyThreshold: 30,
+      label: 'Balanced',
+      desc: 'Moderate risk/reward, balanced bidding frequency'
+    },
+    aggressive: {
+      bidChance: 0.6,
+      maxBidMultiplier: 1.3,
+      urgencyThreshold: 45,
+      label: 'Aggressive',
+      desc: 'High risk, bids often, willing to pay premium'
+    },
+    sniper: {
+      bidChance: 0.8,
+      maxBidMultiplier: 1.5,
+      urgencyThreshold: 10,
+      label: 'Sniper',
+      desc: 'Waits until last 30 seconds, strikes fast'
+    }
+  },
+
+  init() {
+    const toggle = document.getElementById('ai-toggle');
+    const strategySel = document.getElementById('ai-strategy');
+    const maxBidInput = document.getElementById('ai-max-bid');
+    const budgetInput = document.getElementById('ai-budget');
+    const targetSel = document.getElementById('ai-target');
+
+    toggle.addEventListener('change', () => this.toggleAgent(toggle.checked));
+    strategySel.addEventListener('change', () => { this.strategy = strategySel.value; });
+    maxBidInput.addEventListener('change', () => { this.maxBidPerAuction = Math.max(10, Number(maxBidInput.value) || 500); });
+    budgetInput.addEventListener('change', () => { this.totalBudget = Math.max(50, Number(budgetInput.value) || 2000); });
+    targetSel.addEventListener('change', () => { this.targetCategory = targetSel.value; });
+  },
+
+  toggleAgent(on) {
+    this.active = on;
+    const dot = document.getElementById('ai-status-dot');
+    if (on) {
+      if (!state.web3.connected) {
+        showToast('Wallet Required', 'Connect your wallet before activating the AI agent.', 'warning');
+        document.getElementById('ai-toggle').checked = false;
+        return;
+      }
+      dot.classList.add('active');
+      this.log('🤖', `AI Agent <strong>activated</strong> — Strategy: ${this.strategies[this.strategy].label}`);
+      showToast('AI Agent On', `${this.strategies[this.strategy].label} strategy active. Bidding on ${this.targetCategory === 'all' ? 'all' : this.targetCategory} auctions.`, 'info');
+      this.tick();
+      this.tickInterval = setInterval(() => this.tick(), 5000);
+    } else {
+      dot.classList.remove('active');
+      if (this.tickInterval) { clearInterval(this.tickInterval); this.tickInterval = null; }
+      this.log('⏸️', 'AI Agent <strong>paused</strong>');
+      showToast('AI Agent Off', 'AI bidding agent deactivated.', 'info');
+    }
+  },
+
+  tick() {
+    if (!this.active || !state.web3.connected || !state.web3.contractReady) return;
+
+    const strat = this.strategies[this.strategy];
+    const budgetLeft = this.totalBudget - this.totalSpent;
+
+    state.auctions.forEach(item => {
+      if (item.status !== 'active') return;
+      if (item.onChainId === undefined) return;
+      if (item.timeLeft <= 0) return;
+
+      // Category filter
+      if (this.targetCategory !== 'all' && item.category !== this.targetCategory) return;
+
+      // Budget checks
+      if (budgetLeft <= 0) return;
+      const nextBid = item.currentBid + item.minIncrement;
+      if (nextBid > this.maxBidPerAuction) return;
+      if (nextBid > budgetLeft) return;
+
+      // Don't bid if already highest bidder
+      if (item.bids.length > 0 && item.bids[0].bidder === 'You') return;
+
+      // Strategy-based decision
+      let shouldBid = false;
+
+      if (this.strategy === 'sniper') {
+        // Sniper: only bid in last 30 seconds
+        shouldBid = item.timeLeft <= 30 && Math.random() < strat.bidChance;
+      } else if (this.strategy === 'aggressive') {
+        // Aggressive: bid whenever possible, higher chance with less time
+        const timeBonus = item.timeLeft < strat.urgencyThreshold ? 0.3 : 0;
+        shouldBid = Math.random() < (strat.bidChance + timeBonus);
+      } else {
+        // Conservative/Balanced: bid based on value and competition
+        const bidCount = item.bids.length;
+        const isUndervalued = nextBid < item.currentBid * 1.5;
+        const lowCompetition = bidCount < 3;
+        const timePressure = item.timeLeft < strat.urgencyThreshold;
+
+        if (isUndervalued || lowCompetition || timePressure) {
+          shouldBid = Math.random() < strat.bidChance;
+        }
+      }
+
+      if (shouldBid) {
+        this.placeBid(item, nextBid);
+      }
+    });
+  },
+
+  async placeBid(item, bidAmount) {
+    if (!state.web3.contractReady || !state.web3.connected) return;
+
+    // Don't exceed budget
+    if (this.totalSpent + bidAmount > this.totalBudget) {
+      this.log('⛔', `Budget limit reached. Stopping.`);
+      return;
+    }
+
+    const bidWei = ethers.parseEther(usdToEth(bidAmount));
+
+    try {
+      // Estimate gas first
+      const gas = await state.web3.contract.placeBid.estimateGas(item.onChainId, { value: bidWei });
+      const feeData = await state.web3.provider.getFeeData();
+      const gasPrice = feeData.maxFeePerGas || feeData.gasPrice || 0n;
+      const gasCost = gas * gasPrice;
+      const gasEth = parseFloat(ethers.formatEther(gasCost)).toFixed(6);
+
+      this.log('🧠', `Placing bid on <strong>"${item.title}"</strong> — $${bidAmount.toLocaleString()} (≈ ${usdToEth(bidAmount)} ETH) + ${gasEth} gas`);
+
+      const tx = await state.web3.contract.placeBid(item.onChainId, { value: bidWei });
+      this.log('📡', `TX sent: ${tx.hash.slice(0, 10)}... for <strong>"${item.title}"</strong>`);
+
+      const receipt = await tx.wait();
+
+      this.bidsPlaced++;
+      this.totalSpent += bidAmount;
+      this.bidHistory.push({
+        auctionId: item.onChainId,
+        title: item.title,
+        amount: bidAmount,
+        txHash: tx.hash,
+        blockNumber: receipt.blockNumber,
+        timestamp: Date.now()
+      });
+
+      this.updateStats();
+      this.log('✅', `Bid confirmed on <strong>"${item.title}"</strong> — $${bidAmount.toLocaleString()} in block #${receipt.blockNumber}`);
+      showToast('AI Bid Placed', `AI bid $${bidAmount.toLocaleString()} on "${item.title}"`, 'success');
+
+      storeTransaction({
+        type: 'bid',
+        auctionId: item.onChainId,
+        title: item.title,
+        amount: bidAmount,
+        ethAmount: usdToEth(bidAmount),
+        txHash: tx.hash,
+        blockNumber: receipt.blockNumber,
+        timestamp: Date.now(),
+        from: state.web3.address,
+        isAI: true
+      });
+
+      // Update UI
+      await syncSingleAuction(item.onChainId);
+      updateSingleAuctionCard(item);
+      updateStatsSidebar();
+
+    } catch (e) {
+      const reason = e?.message?.includes('user rejected') ? 'User rejected' : (e?.reason || e?.message || 'Failed');
+      this.log('❌', `Bid failed on <strong>"${item.title}"</strong> — ${reason}`);
+    }
+  },
+
+  log(icon, html) {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    this.logEntries.unshift({ icon, html, time });
+    if (this.logEntries.length > 50) this.logEntries.pop();
+    this.renderLog();
+  },
+
+  renderLog() {
+    const container = document.getElementById('ai-log');
+    const countEl = document.getElementById('ai-log-count');
+    if (!container) return;
+
+    countEl.textContent = this.logEntries.length;
+
+    if (this.logEntries.length === 0) {
+      container.innerHTML = '<div class="ai-log-empty">Agent is idle. Toggle on to start bidding.</div>';
+      return;
+    }
+
+    container.innerHTML = this.logEntries.slice(0, 20).map(e => `
+      <div class="ai-log-entry">
+        <span class="ai-log-icon">${e.icon}</span>
+        <span class="ai-log-text">${e.html}</span>
+        <span class="ai-log-time">${e.time}</span>
+      </div>
+    `).join('');
+  },
+
+  updateStats() {
+    document.getElementById('ai-bids-placed').textContent = this.bidsPlaced;
+    document.getElementById('ai-auctions-won').textContent = this.auctionsWon;
+    document.getElementById('ai-total-spent').textContent = `$${this.totalSpent.toLocaleString()}`;
+  }
+};
+
+// 19. Navigation Tab Switching
 document.addEventListener('DOMContentLoaded', () => {
   // Initial displays
   renderAllAuctionsGrid();
@@ -2200,6 +2447,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateStatsSidebar();
   syncScreenReaderTable();
   setupNavigation();
+  AIAgent.init();
   logActivity("🌐 AuraBid connection established. Connect your Web3 wallet to begin bidding.", "general");
   if (CONTRACT_ADDRESS === "0x0000000000000000000000000000000000000000") {
     logActivity("📋 No contract address configured. Deploy contract and paste address in app.js.", "general");
