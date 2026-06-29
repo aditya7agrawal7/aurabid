@@ -2220,12 +2220,14 @@ const AIAgent = {
   bidHistory: [],
   logEntries: [],
   tickInterval: null,
+  pendingBids: new Set(),
 
   strategies: {
     conservative: {
       bidChance: 0.15,
       maxBidMultiplier: 0.8,
       urgencyThreshold: 20,
+      tickMs: 5000,
       label: 'Conservative',
       desc: 'Low risk, bids less frequently, targets undervalued items'
     },
@@ -2233,6 +2235,7 @@ const AIAgent = {
       bidChance: 0.35,
       maxBidMultiplier: 1.0,
       urgencyThreshold: 30,
+      tickMs: 4000,
       label: 'Balanced',
       desc: 'Moderate risk/reward, balanced bidding frequency'
     },
@@ -2240,6 +2243,7 @@ const AIAgent = {
       bidChance: 0.6,
       maxBidMultiplier: 1.3,
       urgencyThreshold: 45,
+      tickMs: 3000,
       label: 'Aggressive',
       desc: 'High risk, bids often, willing to pay premium'
     },
@@ -2247,8 +2251,17 @@ const AIAgent = {
       bidChance: 0.8,
       maxBidMultiplier: 1.5,
       urgencyThreshold: 10,
+      tickMs: 2000,
       label: 'Sniper',
       desc: 'Waits until last 30 seconds, strikes fast'
+    },
+    bot: {
+      bidChance: 1.0,
+      maxBidMultiplier: 1.2,
+      urgencyThreshold: 0,
+      tickMs: 1500,
+      label: 'Relentless Bot',
+      desc: 'Constant bidding on ALL auctions every 1.5s. Maximum aggression.'
     }
   },
 
@@ -2259,11 +2272,30 @@ const AIAgent = {
     const budgetInput = document.getElementById('ai-budget');
     const targetSel = document.getElementById('ai-target');
 
+    // Add the bot option to select if not present
+    if (!strategySel.querySelector('option[value="bot"]')) {
+      const opt = document.createElement('option');
+      opt.value = 'bot';
+      opt.textContent = 'Relentless Bot (MAX)';
+      strategySel.appendChild(opt);
+    }
+
     toggle.addEventListener('change', () => this.toggleAgent(toggle.checked));
-    strategySel.addEventListener('change', () => { this.strategy = strategySel.value; });
+    strategySel.addEventListener('change', () => {
+      this.strategy = strategySel.value;
+      if (this.active) {
+        this.restartTick();
+      }
+    });
     maxBidInput.addEventListener('change', () => { this.maxBidPerAuction = Math.max(10, Number(maxBidInput.value) || 500); });
     budgetInput.addEventListener('change', () => { this.totalBudget = Math.max(50, Number(budgetInput.value) || 2000); });
     targetSel.addEventListener('change', () => { this.targetCategory = targetSel.value; });
+  },
+
+  restartTick() {
+    if (this.tickInterval) { clearInterval(this.tickInterval); this.tickInterval = null; }
+    const tickMs = this.strategies[this.strategy].tickMs;
+    this.tickInterval = setInterval(() => this.tick(), tickMs);
   },
 
   toggleAgent(on) {
@@ -2276,12 +2308,19 @@ const AIAgent = {
         return;
       }
       dot.classList.add('active');
+      if (this.strategy === 'bot') dot.classList.add('bot-active');
       this.log('🤖', `AI Agent <strong>activated</strong> — Strategy: ${this.strategies[this.strategy].label}`);
-      showToast('AI Agent On', `${this.strategies[this.strategy].label} strategy active. Bidding on ${this.targetCategory === 'all' ? 'all' : this.targetCategory} auctions.`, 'info');
+      if (this.strategy === 'bot') {
+        showToast('BOT MODE ON', 'Relentless Bot active. Bidding on ALL auctions every 1.5s.', 'success');
+        playTone(800, 'sine', 0.05);
+        setTimeout(() => playTone(1000, 'sine', 0.05), 100);
+      } else {
+        showToast('AI Agent On', `${this.strategies[this.strategy].label} strategy active.`, 'info');
+      }
       this.tick();
-      this.tickInterval = setInterval(() => this.tick(), 5000);
+      this.restartTick();
     } else {
-      dot.classList.remove('active');
+      dot.classList.remove('active', 'bot-active');
       if (this.tickInterval) { clearInterval(this.tickInterval); this.tickInterval = null; }
       this.log('⏸️', 'AI Agent <strong>paused</strong>');
       showToast('AI Agent Off', 'AI bidding agent deactivated.', 'info');
@@ -2311,23 +2350,25 @@ const AIAgent = {
       // Don't bid if already highest bidder
       if (item.bids.length > 0 && item.bids[0].bidder === 'You') return;
 
+      // Don't bid if a TX for this auction is already pending
+      if (this.pendingBids.has(item.onChainId)) return;
+
       // Strategy-based decision
       let shouldBid = false;
 
-      if (this.strategy === 'sniper') {
-        // Sniper: only bid in last 30 seconds
+      if (this.strategy === 'bot') {
+        // Relentless Bot: ALWAYS bids. No randomness. Every auction. Every tick.
+        shouldBid = true;
+      } else if (this.strategy === 'sniper') {
         shouldBid = item.timeLeft <= 30 && Math.random() < strat.bidChance;
       } else if (this.strategy === 'aggressive') {
-        // Aggressive: bid whenever possible, higher chance with less time
         const timeBonus = item.timeLeft < strat.urgencyThreshold ? 0.3 : 0;
         shouldBid = Math.random() < (strat.bidChance + timeBonus);
       } else {
-        // Conservative/Balanced: bid based on value and competition
         const bidCount = item.bids.length;
         const isUndervalued = nextBid < item.currentBid * 1.5;
         const lowCompetition = bidCount < 3;
         const timePressure = item.timeLeft < strat.urgencyThreshold;
-
         if (isUndervalued || lowCompetition || timePressure) {
           shouldBid = Math.random() < strat.bidChance;
         }
@@ -2342,23 +2383,26 @@ const AIAgent = {
   async placeBid(item, bidAmount) {
     if (!state.web3.contractReady || !state.web3.connected) return;
 
+    // Lock this auction to prevent double-bids
+    this.pendingBids.add(item.onChainId);
+
     // Don't exceed budget
     if (this.totalSpent + bidAmount > this.totalBudget) {
       this.log('⛔', `Budget limit reached. Stopping.`);
+      this.pendingBids.delete(item.onChainId);
       return;
     }
 
     const bidWei = ethers.parseEther(usdToEth(bidAmount));
 
     try {
-      // Estimate gas first
       const gas = await state.web3.contract.placeBid.estimateGas(item.onChainId, { value: bidWei });
       const feeData = await state.web3.provider.getFeeData();
       const gasPrice = feeData.maxFeePerGas || feeData.gasPrice || 0n;
       const gasCost = gas * gasPrice;
       const gasEth = parseFloat(ethers.formatEther(gasCost)).toFixed(6);
 
-      this.log('🧠', `Placing bid on <strong>"${item.title}"</strong> — $${bidAmount.toLocaleString()} (≈ ${usdToEth(bidAmount)} ETH) + ${gasEth} gas`);
+      this.log('🧠', `Bidding <strong>"${item.title}"</strong> — $${bidAmount.toLocaleString()} (≈ ${usdToEth(bidAmount)} ETH) + ${gasEth} gas`);
 
       const tx = await state.web3.contract.placeBid(item.onChainId, { value: bidWei });
       this.log('📡', `TX sent: ${tx.hash.slice(0, 10)}... for <strong>"${item.title}"</strong>`);
@@ -2377,8 +2421,13 @@ const AIAgent = {
       });
 
       this.updateStats();
-      this.log('✅', `Bid confirmed on <strong>"${item.title}"</strong> — $${bidAmount.toLocaleString()} in block #${receipt.blockNumber}`);
-      showToast('AI Bid Placed', `AI bid $${bidAmount.toLocaleString()} on "${item.title}"`, 'success');
+      this.log('✅', `Confirmed on <strong>"${item.title}"</strong> — $${bidAmount.toLocaleString()} block #${receipt.blockNumber}`);
+
+      if (this.strategy === 'bot') {
+        // Bot: no toast for every bid (too noisy), just log
+      } else {
+        showToast('AI Bid Placed', `AI bid $${bidAmount.toLocaleString()} on "${item.title}"`, 'success');
+      }
 
       storeTransaction({
         type: 'bid',
@@ -2393,14 +2442,15 @@ const AIAgent = {
         isAI: true
       });
 
-      // Update UI
       await syncSingleAuction(item.onChainId);
       updateSingleAuctionCard(item);
       updateStatsSidebar();
 
     } catch (e) {
       const reason = e?.message?.includes('user rejected') ? 'User rejected' : (e?.reason || e?.message || 'Failed');
-      this.log('❌', `Bid failed on <strong>"${item.title}"</strong> — ${reason}`);
+      this.log('❌', `Failed on <strong>"${item.title}"</strong> — ${reason}`);
+    } finally {
+      this.pendingBids.delete(item.onChainId);
     }
   },
 

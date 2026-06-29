@@ -1880,6 +1880,17 @@
   animation: pulseGreen 1.5s ease-in-out infinite;
 }
 
+.ai-status-dot.bot-active {
+  background: #ff3b5c;
+  box-shadow: 0 0 12px #ff3b5c;
+  animation: pulseRed 0.8s ease-in-out infinite;
+}
+
+@keyframes pulseRed {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px #ff3b5c; }
+  50% { opacity: 0.6; box-shadow: 0 0 20px #ff3b5c, 0 0 40px rgba(255,59,92,0.3); }
+}
+
 .ai-controls { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.8rem; }
 
 .ai-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.7rem; background: rgba(255,255,255,0.03); border-radius: 8px; }
