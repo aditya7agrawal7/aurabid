@@ -1364,9 +1364,10 @@ function setupContractEventListeners() {
       item.currentBid = amountUsd;
 
       if (isUserWinner) {
-        showToast("YOU WON!", `You won "${item.title}" for $${amountUsd.toLocaleString()}! Go to payment page.`, "success");
+        showToast("YOU WON!", `You won "${item.title}" for $${amountUsd.toLocaleString()}! Click "Pay Now" on the card to complete payment.`, "success");
         playSoundWin();
         triggerConfetti();
+        logActivity(`🏆 YOU WON "${item.title}" for $${amountUsd.toLocaleString()}! Go to payment.`, 'win');
         storeTransaction({
           type: 'settlement',
           auctionId: Number(auctionId),
@@ -1378,12 +1379,6 @@ function setupContractEventListeners() {
           from: winner,
           isUserWinner: true
         });
-        // Redirect to payment page after 3 seconds
-        setTimeout(() => {
-          if (confirm(`You won "${item.title}" for $${amountUsd.toLocaleString()}!\n\nGo to payment page to complete the transaction?`)) {
-            window.location.href = `payment.html?id=${auctionId}`;
-          }
-        }, 2000);
       } else {
         showToast("Auction Ended", `"${item.title}" won by ${winnerShort}`, "info");
       }
