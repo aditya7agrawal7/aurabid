@@ -1,8 +1,11 @@
+
 # AuraBid - Decentralized Real-Time Auction Platform
 
 A fully decentralized, real-time bidding auction platform powered by Ethereum smart contracts. Users can create auctions, place bids, settle auctions, and make payments entirely on-chain via MetaMask on the Sepolia testnet. Includes an AI Bidding Agent that can autonomously bid on auctions using configurable strategies.
 
----
+------------------------------------------------------------------------------------------------------------------------------------------------
+deployed live on-https://6a429c12cf79694da05091a3--serene-fudge-e96cca.netlify.app/
+------------------------------------------------------------------------------------------------------------------------------------------------
 
 ## Architecture
 
@@ -223,6 +226,10 @@ npx serve .
 4. Select strategy from dropdown
 5. Toggle **Agent Status** ON
 6. Monitor activity log for real-time decisions
+
+<img width="1423" height="699" alt="Screenshot 2026-06-29 at 10 17 44 PM" src="https://github.com/user-attachments/assets/1f891e47-189c-4076-b762-1b0215b292d3" />
+<img width="342" height="411" alt="Screenshot 2026-06-29 at 10 15 46 PM" src="https://github.com/user-attachments/assets/e953708c-3c66-4ef8-a6eb-ef9ea99cc807" />
+<img width="1426" height="718" alt="Screenshot 2026-06-29 at 10 15 23 PM" src="https://github.com/user-attachments/assets/7cf60fa4-af99-4bee-a917-dee95bcb1c16" />
 
 ---
 
