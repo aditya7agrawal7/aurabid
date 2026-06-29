@@ -1466,3 +1466,182 @@
   background: #627eea;
   box-shadow: 0 0 4px #627eea;
 }
+
+/* ========== TRANSACTION STATUS BAR ========== */
+
+.tx-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 1.2rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  animation: slideDown 0.3s ease-out;
+  position: relative;
+  z-index: 100;
+}
+
+.tx-status-bar.pending {
+  background: rgba(255, 159, 28, 0.12);
+  border-bottom: 1px solid rgba(255, 159, 28, 0.25);
+  color: var(--status-warning, #ff9f1c);
+}
+
+.tx-status-bar.confirmed {
+  background: rgba(46, 196, 182, 0.12);
+  border-bottom: 1px solid rgba(46, 196, 182, 0.25);
+  color: var(--status-success, #2ec4b6);
+}
+
+.tx-status-bar.failed {
+  background: rgba(230, 57, 70, 0.12);
+  border-bottom: 1px solid rgba(230, 57, 70, 0.25);
+  color: var(--status-danger, #e63946);
+}
+
+.tx-status-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 159, 28, 0.25);
+  border-top-color: var(--status-warning, #ff9f1c);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.tx-status-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.tx-status-text {
+  flex: 1;
+}
+
+.tx-status-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+.tx-status-link:hover {
+  opacity: 0.7;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ========== CARD TX OVERLAY ========== */
+
+.card-tx-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 30, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: 16px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.card-tx-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.card-tx-message {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #a0aec0);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.auction-card.tx-in-progress {
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ========== ETHERSCAN LINK IN TOAST ========== */
+
+.tx-etherscan-link {
+  display: inline-block;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(98, 126, 234, 0.15);
+  border: 1px solid rgba(98, 126, 234, 0.25);
+  color: #8fa8f8;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-decoration: none;
+  letter-spacing: 0.3px;
+  transition: all 0.2s;
+}
+
+.tx-etherscan-link:hover {
+  background: rgba(98, 126, 234, 0.25);
+  border-color: rgba(98, 126, 234, 0.4);
+  color: #b0c4ff;
+}
+
+.toast.success .tx-etherscan-link {
+  background: rgba(46, 196, 182, 0.15);
+  border-color: rgba(46, 196, 182, 0.25);
+  color: #5ed4c8;
+}
+
+.toast.success .tx-etherscan-link:hover {
+  background: rgba(46, 196, 182, 0.25);
+  border-color: rgba(46, 196, 182, 0.4);
+  color: #7ee8dc;
+}
+
+.toast.warning .tx-etherscan-link,
+.toast.error .tx-etherscan-link {
+  background: rgba(230, 57, 70, 0.15);
+  border-color: rgba(230, 57, 70, 0.25);
+  color: #f08090;
+}
+
+.toast.warning .tx-etherscan-link:hover,
+.toast.error .tx-etherscan-link:hover {
+  background: rgba(230, 57, 70, 0.25);
+  border-color: rgba(230, 57, 70, 0.4);
+  color: #ffa0a8;
+}
+
+/* ========== TOAST DISMISS BUTTON ========== */
+
+.toast.dismissible::after {
+  content: '×';
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  font-size: 1.1rem;
+  color: var(--text-muted, #8892a4);
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.toast.dismissible:hover::after {
+  color: var(--text-primary, #e2e8f0);
+}

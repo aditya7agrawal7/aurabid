@@ -688,12 +688,14 @@ async function placeBidOnChain(item, bidAmount) {
 
   // Show pending state
   const pendingToastId = showPendingToast("Confirm in MetaMask", "Review the transaction in your wallet...");
+  setCardTxOverlay(item.id, true, 'Waiting for wallet signature...');
 
   try {
     showTxPending(true);
     const tx = await contract.placeBid(item.onChainId, { value: bidWei });
 
-    updatePendingToast(pendingToastId, "Transaction Submitted", "Waiting for blockchain confirmation...");
+    updatePendingToast(pendingToastId, "Transaction Submitted", "Waiting for blockchain confirmation...", 'info', tx.hash);
+    setCardTxOverlay(item.id, true, `TX: ${tx.hash.slice(0, 10)}... Broadcast to network`);
     logActivity(`📡 TX sent: ${tx.hash.slice(0, 10)}...`, 'bid');
 
     const receipt = await tx.wait();
@@ -703,7 +705,9 @@ async function placeBidOnChain(item, bidAmount) {
       log => log.fragment && log.fragment.name === 'AuctionExtended'
     );
 
-    updatePendingToast(pendingToastId, "Bid Placed on-chain!", `Confirmed in block ${receipt.blockNumber}`, 'success');
+    updatePendingToast(pendingToastId, "Bid Placed on-chain!", `Confirmed in block ${receipt.blockNumber}`, 'success', tx.hash);
+    updateTxStatusBar('confirmed', `Bid confirmed in block #${receipt.blockNumber}`, tx.hash);
+    setCardTxOverlay(item.id, false);
     showTxPending(false);
     playSoundBidSuccess();
 
@@ -727,8 +731,16 @@ async function placeBidOnChain(item, bidAmount) {
   } catch (e) {
     showTxPending(false);
     removePendingToast(pendingToastId);
+    setCardTxOverlay(item.id, false);
     const reason = parseContractError(e);
-    showToast("Bid Failed", reason, "warning");
+
+    if (e?.message?.includes('user rejected') || e?.code === 4001) {
+      updateTxStatusBar('rejected', 'Transaction rejected by user');
+      showToast("Bid Cancelled", "You rejected the transaction in MetaMask.", "warning");
+    } else {
+      updateTxStatusBar('failed', `Transaction failed: ${reason}`);
+      showToast("Bid Failed", reason, "warning");
+    }
     playSoundError();
     return false;
   }
@@ -789,6 +801,15 @@ function parseContractError(e) {
 }
 
 let _pendingToastCounter = 0;
+
+function etherscanTxLink(txHash) {
+  if (!txHash) return '';
+  const base = state.web3.chainId === '0xaa36a7'
+    ? 'https://sepolia.etherscan.io'
+    : 'https://etherscan.io';
+  return `${base}/tx/${txHash}`;
+}
+
 function showPendingToast(title, message) {
   const id = `pending-toast-${++_pendingToastCounter}`;
   const container = document.getElementById('toast-container');
@@ -806,23 +827,39 @@ function showPendingToast(title, message) {
   return id;
 }
 
-function updatePendingToast(id, title, message, type) {
+function updatePendingToast(id, title, message, type, txHash) {
   const toast = document.getElementById(id);
   if (!toast) return;
   if (type) toast.className = `toast ${type}`;
   const titleEl = toast.querySelector('.toast-title');
   const msgEl = toast.querySelector('.toast-msg');
   const iconEl = toast.querySelector('.toast-icon');
+
   if (titleEl) titleEl.textContent = title;
-  if (msgEl) msgEl.textContent = message;
-  if (iconEl && type === 'success') iconEl.innerHTML = '🏆';
+
+  // Build message with TX hash + Etherscan link
+  let msgHtml = message;
+  if (txHash) {
+    const shortHash = txHash.slice(0, 10) + '...' + txHash.slice(-6);
+    const link = etherscanTxLink(txHash);
+    msgHtml += `<br><a href="${link}" target="_blank" rel="noopener" class="tx-etherscan-link">${shortHash} ↗ View on Etherscan</a>`;
+  }
+  if (msgEl) msgEl.innerHTML = msgHtml;
+
+  if (iconEl && type === 'success') iconEl.innerHTML = '✅';
   if (iconEl && type === 'warning') iconEl.innerHTML = '⚠️';
-  if (type === 'success' || type === 'warning') {
+  if (iconEl && type === 'error') iconEl.innerHTML = '❌';
+
+  // Success/warning toasts stay longer (8s) and are dismissible
+  if (type === 'success' || type === 'warning' || type === 'error') {
+    toast.classList.add('dismissible');
     setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateX(120%) scale(0.9)';
-      setTimeout(() => toast.remove(), 300);
-    }, 4000);
+      if (toast.parentNode) {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(120%) scale(0.9)';
+        setTimeout(() => toast.remove(), 300);
+      }
+    }, 8000);
   }
 }
 
@@ -834,10 +871,79 @@ function removePendingToast(id) {
   }
 }
 
-function showTxPending(show) {
+function showTxPending(show, txHash) {
   const indicator = document.getElementById('tx-pending-indicator');
   if (indicator) {
     indicator.style.display = show ? 'flex' : 'none';
+  }
+  // Update the TX status bar
+  const statusBar = document.getElementById('tx-status-bar');
+  if (statusBar) {
+    if (show) {
+      statusBar.style.display = 'flex';
+      statusBar.className = 'tx-status-bar pending';
+      statusBar.innerHTML = `
+        <span class="tx-status-spinner"></span>
+        <span class="tx-status-text">Transaction pending...</span>
+        ${txHash ? `<a href="${etherscanTxLink(txHash)}" target="_blank" rel="noopener" class="tx-status-link">View ↗</a>` : ''}
+      `;
+    } else {
+      statusBar.style.display = 'none';
+    }
+  }
+}
+
+function updateTxStatusBar(status, message, txHash) {
+  const statusBar = document.getElementById('tx-status-bar');
+  if (!statusBar) return;
+  statusBar.style.display = 'flex';
+
+  if (status === 'confirmed') {
+    statusBar.className = 'tx-status-bar confirmed';
+    statusBar.innerHTML = `
+      <span class="tx-status-icon">✅</span>
+      <span class="tx-status-text">${message}</span>
+      ${txHash ? `<a href="${etherscanTxLink(txHash)}" target="_blank" rel="noopener" class="tx-status-link">View on Etherscan ↗</a>` : ''}
+    `;
+    setTimeout(() => { statusBar.style.display = 'none'; }, 10000);
+  } else if (status === 'failed') {
+    statusBar.className = 'tx-status-bar failed';
+    statusBar.innerHTML = `
+      <span class="tx-status-icon">❌</span>
+      <span class="tx-status-text">${message}</span>
+    `;
+    setTimeout(() => { statusBar.style.display = 'none'; }, 8000);
+  } else if (status === 'rejected') {
+    statusBar.className = 'tx-status-bar failed';
+    statusBar.innerHTML = `
+      <span class="tx-status-icon">🚫</span>
+      <span class="tx-status-text">${message}</span>
+    `;
+    setTimeout(() => { statusBar.style.display = 'none'; }, 5000);
+  }
+}
+
+function setCardTxOverlay(auctionId, show, message) {
+  const card = document.getElementById(`card-${auctionId}`);
+  if (!card) return;
+
+  // Remove existing overlay
+  const existing = card.querySelector('.card-tx-overlay');
+  if (existing) existing.remove();
+
+  if (show) {
+    const overlay = document.createElement('div');
+    overlay.className = 'card-tx-overlay';
+    overlay.innerHTML = `
+      <div class="card-tx-overlay-content">
+        <span class="tx-spinner"></span>
+        <span class="card-tx-message">${message || 'Processing transaction...'}</span>
+      </div>
+    `;
+    card.appendChild(overlay);
+    card.classList.add('tx-in-progress');
+  } else {
+    card.classList.remove('tx-in-progress');
   }
 }
 
@@ -850,13 +956,17 @@ async function settleAuctionOnChain(auctionId) {
   }
 
   const pendingId = showPendingToast("Settling Auction", "Confirm the settlement transaction...");
+  setCardTxOverlay(`onchain-${auctionId}`, true, 'Waiting for wallet signature...');
 
   try {
     showTxPending(true);
     const tx = await state.web3.contract.settleAuction(auctionId);
-    updatePendingToast(pendingId, "Settlement Submitted", "Waiting for confirmation...");
+    updatePendingToast(pendingId, "Settlement Submitted", "Waiting for confirmation...", 'info', tx.hash);
+    setCardTxOverlay(`onchain-${auctionId}`, true, `TX: ${tx.hash.slice(0, 10)}... Broadcast to network`);
     const receipt = await tx.wait();
-    updatePendingToast(pendingId, "Auction Settled!", `Confirmed in block ${receipt.blockNumber}`, 'success');
+    updatePendingToast(pendingId, "Auction Settled!", `Confirmed in block ${receipt.blockNumber}`, 'success', tx.hash);
+    updateTxStatusBar('confirmed', `Settlement confirmed in block #${receipt.blockNumber}`, tx.hash);
+    setCardTxOverlay(`onchain-${auctionId}`, false);
     showTxPending(false);
     playSoundWin();
     showToast("Auction Settled!", "Funds transferred to seller.", "success");
@@ -865,7 +975,14 @@ async function settleAuctionOnChain(auctionId) {
   } catch (e) {
     showTxPending(false);
     removePendingToast(pendingId);
-    showToast("Settlement Failed", parseContractError(e), "warning");
+    setCardTxOverlay(`onchain-${auctionId}`, false);
+    const reason = parseContractError(e);
+    if (e?.message?.includes('user rejected') || e?.code === 4001) {
+      updateTxStatusBar('rejected', 'Settlement rejected by user');
+    } else {
+      updateTxStatusBar('failed', `Settlement failed: ${reason}`);
+    }
+    showToast("Settlement Failed", reason, "warning");
     return false;
   }
 }
@@ -877,13 +994,17 @@ async function claimRefundOnChain(auctionId) {
   }
 
   const pendingId = showPendingToast("Claiming Refund", "Confirm the refund transaction...");
+  setCardTxOverlay(`onchain-${auctionId}`, true, 'Waiting for wallet signature...');
 
   try {
     showTxPending(true);
     const tx = await state.web3.contract.claimRefund(auctionId);
-    updatePendingToast(pendingId, "Refund Submitted", "Waiting for confirmation...");
+    updatePendingToast(pendingId, "Refund Submitted", "Waiting for confirmation...", 'info', tx.hash);
+    setCardTxOverlay(`onchain-${auctionId}`, true, `TX: ${tx.hash.slice(0, 10)}... Broadcast to network`);
     const receipt = await tx.wait();
-    updatePendingToast(pendingId, "Refund Claimed!", `ETH returned in block ${receipt.blockNumber}`, 'success');
+    updatePendingToast(pendingId, "Refund Claimed!", `ETH returned in block ${receipt.blockNumber}`, 'success', tx.hash);
+    updateTxStatusBar('confirmed', `Refund confirmed in block #${receipt.blockNumber}`, tx.hash);
+    setCardTxOverlay(`onchain-${auctionId}`, false);
     showTxPending(false);
     playSoundBidSuccess();
     showToast("Refund Received!", "ETH has been returned to your wallet.", "success");
@@ -893,7 +1014,14 @@ async function claimRefundOnChain(auctionId) {
   } catch (e) {
     showTxPending(false);
     removePendingToast(pendingId);
-    showToast("Refund Failed", parseContractError(e), "warning");
+    setCardTxOverlay(`onchain-${auctionId}`, false);
+    const reason = parseContractError(e);
+    if (e?.message?.includes('user rejected') || e?.code === 4001) {
+      updateTxStatusBar('rejected', 'Refund rejected by user');
+    } else {
+      updateTxStatusBar('failed', `Refund failed: ${reason}`);
+    }
+    showToast("Refund Failed", reason, "warning");
     return false;
   }
 }
@@ -915,7 +1043,8 @@ async function createAuctionOnChain(title, description, startingBid, minIncremen
     const tx = await state.web3.contract.createAuction(
       title, description, startingBidWei, minIncrementWei, durationBigInt
     );
-    updatePendingToast(pendingId, "Auction Submitted", "Waiting for confirmation...");
+    updatePendingToast(pendingId, "Auction Submitted", "Waiting for confirmation...", 'info', tx.hash);
+    logActivity(`📡 TX sent: ${tx.hash.slice(0, 10)}...`, 'listing');
     const receipt = await tx.wait();
 
     const createdEvent = receipt.logs.find(
@@ -923,13 +1052,20 @@ async function createAuctionOnChain(title, description, startingBid, minIncremen
     );
 
     const onChainId = createdEvent ? Number(createdEvent.args.auctionId) : null;
-    updatePendingToast(pendingId, "Auction Launched!", `Confirmed in block ${receipt.blockNumber}`, 'success');
+    updatePendingToast(pendingId, "Auction Launched!", `Confirmed in block ${receipt.blockNumber}`, 'success', tx.hash);
+    updateTxStatusBar('confirmed', `Auction created in block #${receipt.blockNumber}`, tx.hash);
     showTxPending(false);
     return onChainId;
   } catch (e) {
     showTxPending(false);
     removePendingToast(pendingId);
-    showToast("Auction Creation Failed", parseContractError(e), "warning");
+    const reason = parseContractError(e);
+    if (e?.message?.includes('user rejected') || e?.code === 4001) {
+      updateTxStatusBar('rejected', 'Auction creation rejected by user');
+    } else {
+      updateTxStatusBar('failed', `Auction creation failed: ${reason}`);
+    }
+    showToast("Auction Creation Failed", reason, "warning");
     return null;
   }
 }
