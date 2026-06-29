@@ -602,8 +602,6 @@ function showToast(title, message, type = 'info') {
     }
   }, 4500);
 }
-  }, 4500);
-}
 
 // 5. Live Activity Feed Logger
 function logActivity(text, type = 'general') {
