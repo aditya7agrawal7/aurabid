@@ -1,5 +1,22 @@
 // AuraBid Application Logic - Single Page Application Core
 
+// 0. Text Sanitization Utilities (XSS Prevention)
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function sanitizeInput(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return 0;
+  return num;
+}
+
 // 1. Initial State Data
 const PRESETS = {
   'gradient-1': 'linear-gradient(135deg, oklch(0.62 0.22 285) 0%, oklch(0.72 0.19 195) 100%)', // Violet to Cyan
@@ -554,8 +571,8 @@ function showToast(title, message, type = 'info') {
   toast.innerHTML = `
     <span class="toast-icon">${icon}</span>
     <div class="toast-content">
-      <div class="toast-title">${title}</div>
-      <div class="toast-msg">${message}</div>
+      <div class="toast-title">${escapeHtml(title)}</div>
+      <div class="toast-msg">${escapeHtml(message)}</div>
     </div>
     <span class="toast-close" role="button" aria-label="Close Toast">&times;</span>
   `;
@@ -567,14 +584,24 @@ function showToast(title, message, type = 'info') {
 
   container.appendChild(toast);
 
+  // Limit visible toasts to 3
+  const toasts = container.querySelectorAll('.toast');
+  if (toasts.length > 3) {
+    toasts[0].style.opacity = '0';
+    toasts[0].style.transform = 'translateX(120%) scale(0.9)';
+    setTimeout(() => toasts[0].remove(), 300);
+  }
+
   // Auto remove toast
   setTimeout(() => {
     if (toast.parentNode) {
-      toast.style.transform = 'translateX(120%) scale(0.9)';
       toast.style.opacity = '0';
+      toast.style.transform = 'translateX(120%) scale(0.9)';
       toast.style.transition = 'all 0.3s ease';
       setTimeout(() => toast.remove(), 300);
     }
+  }, 4500);
+}
   }, 4500);
 }
 
@@ -589,7 +616,7 @@ function logActivity(text, type = 'general') {
 
   item.innerHTML = `
     <span>${text}</span>
-    <span class="activity-time">${timeStr}</span>
+    <span class="activity-time">${escapeHtml(timeStr)}</span>
   `;
 
   feed.prepend(item);
@@ -639,21 +666,6 @@ async function placeBid(auctionId, bidAmount) {
     return false;
   }
 
-  // When wallet is connected, do NOT mix demo escrow with real wallet UI.
-  if (!state.web3.connected) {
-    showToast("Wallet Required", "Connect your Web3 wallet to place bids.", "warning");
-    playSoundError();
-    return false;
-  }
-
-  // If contract isn't ready, prevent demo fallback that can desync balances.
-  if (!state.web3.contractReady) {
-    showToast("Bidding Disabled", "Smart contract not connected yet. Please ensure CONTRACT_ADDRESS is set and you're on the correct network.", "warning");
-    playSoundError();
-    return false;
-  }
-
-
   const incrementedTarget = item.currentBid + item.minIncrement;
   if (bidAmount < incrementedTarget) {
     showToast("Invalid Bid", `Bid must be at least $${incrementedTarget.toLocaleString()}.`, "warning");
@@ -662,11 +674,16 @@ async function placeBid(auctionId, bidAmount) {
   }
 
   // ========== ON-CHAIN BIDDING ==========
-  if (state.web3.contractReady && item.onChainId !== undefined) {
+  if (item.onChainId !== undefined) {
+    if (!state.web3.connected || !state.web3.contractReady) {
+      showToast("Wallet Required", "Connect your Web3 wallet to place on-chain bids.", "warning");
+      playSoundError();
+      return false;
+    }
     return await placeBidOnChain(item, bidAmount);
   }
 
-  // ========== DEMO MODE BIDDING (fallback) ==========
+  // ========== DEMO MODE BIDDING ==========
   return placeBidDemo(item, bidAmount);
 }
 
@@ -778,9 +795,8 @@ function placeBidDemo(item, bidAmount) {
 
   updateWalletUI('deduct');
   playSoundBidSuccess();
-  const ethEquiv = usdToEth(bidAmount);
-  showToast("Bid Placed!", `You are now the high bidder for "${item.title}" at $${bidAmount.toLocaleString()} (≈ ${ethEquiv} ETH)`, "success");
-  logActivity(`👤 You bid $${bidAmount.toLocaleString()} (${ethEquiv} ETH) on "${item.title}"`, 'bid');
+  showToast("Bid Placed!", `You are now the high bidder for "${item.title}" at $${bidAmount.toLocaleString()}`, "success");
+  logActivity(`👤 You bid $${bidAmount.toLocaleString()} on "${item.title}"`, 'bid');
 
   updateSingleAuctionCard(item);
   updateStatsSidebar();
@@ -835,7 +851,7 @@ function updatePendingToast(id, title, message, type, txHash) {
   const msgEl = toast.querySelector('.toast-msg');
   const iconEl = toast.querySelector('.toast-icon');
 
-  if (titleEl) titleEl.textContent = title;
+  if (titleEl) titleEl.textContent = escapeHtml(title);
 
   // Build message with TX hash + Etherscan link
   let msgHtml = message;
@@ -944,6 +960,46 @@ function setCardTxOverlay(auctionId, show, message) {
     card.classList.add('tx-in-progress');
   } else {
     card.classList.remove('tx-in-progress');
+  }
+}
+
+// ========== ON-CHAIN CANCEL ==========
+
+async function cancelAuctionOnChain(auctionId) {
+  if (!state.web3.contractReady) {
+    showToast("Not Available", "Smart contract not connected.", "warning");
+    return false;
+  }
+
+  const pendingId = showPendingToast("Cancelling Auction", "Confirm the cancellation transaction...");
+  setCardTxOverlay(`onchain-${auctionId}`, true, 'Waiting for wallet signature...');
+
+  try {
+    showTxPending(true);
+    const tx = await state.web3.contract.cancelAuction(auctionId);
+    updatePendingToast(pendingId, "Cancel Submitted", "Waiting for confirmation...", 'info', tx.hash);
+    setCardTxOverlay(`onchain-${auctionId}`, true, `TX: ${tx.hash.slice(0, 10)}... Broadcast to network`);
+    const receipt = await tx.wait();
+    updatePendingToast(pendingId, "Auction Cancelled!", `Confirmed in block ${receipt.blockNumber}`, 'success', tx.hash);
+    updateTxStatusBar('confirmed', `Cancellation confirmed in block #${receipt.blockNumber}`, tx.hash);
+    setCardTxOverlay(`onchain-${auctionId}`, false);
+    showTxPending(false);
+    showToast("Auction Cancelled", "All bidders have been refunded.", "success");
+    logActivity(`🚫 Auction #${auctionId} cancelled by seller`, 'general');
+    await syncSingleAuction(auctionId);
+    return true;
+  } catch (e) {
+    showTxPending(false);
+    removePendingToast(pendingId);
+    setCardTxOverlay(`onchain-${auctionId}`, false);
+    const reason = parseContractError(e);
+    if (e?.message?.includes('user rejected') || e?.code === 4001) {
+      updateTxStatusBar('rejected', 'Cancellation rejected by user');
+    } else {
+      updateTxStatusBar('failed', `Cancellation failed: ${reason}`);
+    }
+    showToast("Cancel Failed", reason, "warning");
+    return false;
   }
 }
 
@@ -1133,6 +1189,46 @@ async function syncSingleAuction(onChainId) {
       localItem.status = isEnded ? 'ended' : (isActive ? 'active' : 'ended');
       localItem.onChainHighestBidder = auction.highestBidder;
     }
+
+    // Populate bids from on-chain data
+    if (auction.highestBidder !== ethers.ZeroAddress) {
+      const bidderLabel = auction.highestBidder.toLowerCase() === state.web3.address?.toLowerCase()
+        ? 'You' : truncateAddress(auction.highestBidder);
+      const existingHighBid = localItem.bids.length > 0 ? localItem.bids[0] : null;
+
+      if (!existingHighBid || existingHighBid.bidder !== bidderLabel) {
+        localItem.bids = [{
+          bidder: bidderLabel,
+          amount: ethToUsd(auction.highestBid),
+          time: 'On-chain'
+        }];
+      }
+    }
+
+    // Also fetch other bidders for richer history
+    try {
+      const bidders = await state.web3.contract.getAuctionBidders(onChainId);
+      const biddersWithAmounts = [];
+      for (const addr of bidders) {
+        const bidAmount = await state.web3.contract.getBidAmount(onChainId, addr);
+        if (bidAmount > 0n) {
+          const bidderLabel = addr.toLowerCase() === state.web3.address?.toLowerCase()
+            ? 'You' : truncateAddress(addr);
+          biddersWithAmounts.push({
+            bidder: bidderLabel,
+            amount: Math.round(parseFloat(ethers.formatEther(bidAmount)) * state.web3.ethPrice),
+            time: 'On-chain'
+          });
+        }
+      }
+      // Sort by amount descending
+      biddersWithAmounts.sort((a, b) => b.amount - a.amount);
+      if (biddersWithAmounts.length > 0) {
+        localItem.bids = biddersWithAmounts;
+      }
+    } catch (e) {
+      // Silently fail if bidder fetch fails (non-critical)
+    }
   } catch (e) {
     console.warn(`Sync auction ${onChainId} failed:`, e);
   }
@@ -1151,10 +1247,22 @@ function setupContractEventListeners() {
 
     logActivity(`🔔 On-chain bid: ${isUserBid ? 'You' : bidderShort} bid $${amountUsd.toLocaleString()} on auction #${auctionId}`, 'bid');
 
-    // Sync the auction
+    // Add bid to local history immediately
+    const item = state.auctions.find(a => a.onChainId === Number(auctionId));
+    if (item) {
+      const bidderLabel = isUserBid ? 'You' : bidderShort;
+      item.bids.unshift({
+        bidder: bidderLabel,
+        amount: amountUsd,
+        time: 'Just now'
+      });
+      // Keep only top 10 bids
+      if (item.bids.length > 10) item.bids = item.bids.slice(0, 10);
+    }
+
+    // Sync the auction from chain
     await syncSingleAuction(Number(auctionId));
 
-    const item = state.auctions.find(a => a.onChainId === Number(auctionId));
     if (item) {
       updateSingleAuctionCard(item);
       updateStatsSidebar();
@@ -1206,6 +1314,19 @@ function setupContractEventListeners() {
       refreshWalletBalance();
     }
   });
+
+  contract.on('AuctionCancelled', async (auctionId) => {
+    logActivity(`🚫 Auction #${auctionId} cancelled on-chain`, 'general');
+    await syncSingleAuction(Number(auctionId));
+    const item = state.auctions.find(a => a.onChainId === Number(auctionId));
+    if (item) {
+      item.status = 'ended';
+      updateSingleAuctionCard(item);
+      updateStatsSidebar();
+      syncScreenReaderTable();
+      showToast("Auction Cancelled", `"${item.title}" has been cancelled.`, "warning");
+    }
+  });
 }
 
 // 8. Dynamic DOM Card Generator
@@ -1229,14 +1350,15 @@ function createAuctionCardElement(item) {
         <div style="position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 20px 20px;"></div>
       </div>
       <div class="card-badges">
-        <span class="category-badge">${item.category}</span>
+        <span class="category-badge">${escapeHtml(item.category)}</span>
+        ${item.onChainId !== undefined ? '<span class="onchain-badge">ON-CHAIN</span>' : ''}
         <span class="timer-badge" id="timer-badge-${item.id}">${formatTime(item.timeLeft)}</span>
       </div>
     </div>
     
     <div class="card-body">
-      <h3 class="card-title">${item.title}</h3>
-      <p class="card-desc">${item.description}</p>
+      <h3 class="card-title">${escapeHtml(item.title)}</h3>
+      <p class="card-desc">${escapeHtml(item.description)}</p>
       
       <div class="time-progressbar-container">
         <div class="time-progressbar" id="progress-${item.id}" style="transform: scaleX(${item.timeLeft / item.duration});"></div>
@@ -1283,14 +1405,24 @@ function createAuctionCardElement(item) {
   const incBtn = card.querySelector(`#inc-btn-${item.id}`);
 
   incBtn.addEventListener('click', () => {
-    const currentVal = parseInt(input.value) || 0;
+    const currentVal = sanitizeInput(input.value);
     input.value = currentVal + item.minIncrement;
   });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const val = parseInt(input.value) || 0;
+    const val = sanitizeInput(input.value);
     const submitBtnEl = card.querySelector(`#submit-btn-${item.id}`);
+
+    // Confirmation dialog for on-chain bids
+    if (item.onChainId !== undefined && state.web3.contractReady) {
+      const ethEquiv = usdToEth(val);
+      const confirmed = confirm(
+        `Place bid of $${val.toLocaleString()} (≈ ${ethEquiv} ETH)?\n\nThis will open MetaMask to confirm the transaction. Gas fees will apply.`
+      );
+      if (!confirmed) return;
+    }
+
     if (submitBtnEl) {
       submitBtnEl.disabled = true;
       submitBtnEl.textContent = 'Processing...';
@@ -1354,7 +1486,7 @@ function updateCardState(card, item) {
   if (item.status === 'active') {
     if (item.bids.length > 0) {
       const highestBidder = item.bids[0].bidder;
-      bidderSpan.innerHTML = `<span class="bidder-dot ${isHighBidderUser ? 'you' : ''}"></span> ${highestBidder}`;
+      bidderSpan.innerHTML = `<span class="bidder-dot ${isHighBidderUser ? 'you' : ''}"></span> ${escapeHtml(highestBidder)}`;
 
       const userHasBid = item.bids.some(b => b.bidder === 'You');
       if (userHasBid) {
@@ -1375,7 +1507,7 @@ function updateCardState(card, item) {
 
     // Reset form limits
     input.min = item.currentBid + item.minIncrement;
-    if (parseInt(input.value) < parseInt(input.min)) {
+    if (sanitizeInput(input.value) < sanitizeInput(input.min)) {
       input.value = input.min;
     }
     input.disabled = false;
@@ -1383,12 +1515,31 @@ function updateCardState(card, item) {
     incBtn.disabled = false;
     submitBtn.textContent = "Place Bid";
 
-    // Clear action area for active auctions
-    if (actionArea) actionArea.innerHTML = '';
+    // Show cancel button for seller on active on-chain auctions
+    if (actionArea && item.onChainId !== undefined && state.web3.connected) {
+      const isSeller = item.owner?.toLowerCase() === state.web3.address?.toLowerCase()
+        || item.onChainSeller?.toLowerCase() === state.web3.address?.toLowerCase();
+      if (isSeller) {
+        actionArea.innerHTML = `<button class="btn btn-secondary btn-cancel-auction" data-onchain-id="${item.onChainId}" style="width:100%; opacity:0.7; font-size:0.75rem;">Cancel Auction</button>`;
+        const cancelBtn = actionArea.querySelector('.btn-cancel-auction');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', async () => {
+            if (!confirm('Cancel this auction? All bidders will be refunded.')) return;
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = 'Cancelling...';
+            await cancelAuctionOnChain(item.onChainId);
+          });
+        }
+      } else {
+        actionArea.innerHTML = '';
+      }
+    } else if (actionArea) {
+      actionArea.innerHTML = '';
+    }
   } else {
     // Ended state styles
     const winner = item.bids.length > 0 ? item.bids[0].bidder : 'None';
-    bidderSpan.innerHTML = `Won by <strong>${winner}</strong>`;
+    bidderSpan.innerHTML = `Won by <strong>${escapeHtml(winner)}</strong>`;
     currentBidVal.className = "bid-data-val";
 
     input.disabled = true;
@@ -1441,7 +1592,7 @@ function updateCardState(card, item) {
   // Render history ticker inside card
   historyList.innerHTML = item.bids.map(b => `
     <div class="card-history-item">
-      <span style="font-weight: 500; color: ${b.bidder === 'You' ? 'var(--status-success)' : 'var(--text-primary)'};">${b.bidder}</span>
+      <span style="font-weight: 500; color: ${b.bidder === 'You' ? 'var(--status-success)' : 'var(--text-primary)'};">${escapeHtml(b.bidder)}</span>
       <span style="color: var(--text-secondary);">$${b.amount.toLocaleString()}</span>
     </div>
   `).join('');
@@ -1458,7 +1609,8 @@ async function updateGasEstimate(item) {
     const bidWei = ethers.parseEther(usdToEth(nextBid));
     const gas = await state.web3.contract.placeBid.estimateGas(item.onChainId, { value: bidWei });
     const feeData = await state.web3.provider.getFeeData();
-    const gasCost = gas * (feeData.gasPrice || 0n);
+    const effectiveGasPrice = feeData.maxFeePerGas || feeData.gasPrice || 0n;
+    const gasCost = gas * effectiveGasPrice;
     const gasEth = parseFloat(ethers.formatEther(gasCost)).toFixed(6);
     const gasUsd = Math.round(parseFloat(gasEth) * state.web3.ethPrice);
     gasEl.textContent = `~${gasEth} ETH ($${gasUsd}) gas`;
@@ -1898,10 +2050,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const title = document.getElementById('item-title').value.trim();
     const desc = document.getElementById('item-desc').value.trim();
-    const startingBid = parseInt(document.getElementById('item-starting-bid').value) || 0;
-    const duration = parseInt(document.getElementById('item-duration').value) || 0;
+    const startingBid = sanitizeInput(document.getElementById('item-starting-bid').value);
+    const duration = sanitizeInput(document.getElementById('item-duration').value);
     const category = document.getElementById('item-category').value;
-    const increment = parseInt(document.getElementById('item-increment').value) || 0;
+    const increment = sanitizeInput(document.getElementById('item-increment').value);
     const gradientKey = document.getElementById('selected-gradient').value;
 
     // Validate fields
@@ -1911,15 +2063,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Check wallet requirement for on-chain creation
-    if (state.web3.contractReady && !state.web3.connected) {
-      showToast("Wallet Required", "Connect your wallet to create an on-chain auction.", "warning");
-      return;
-    }
-
     let onChainId = null;
 
-    // Try on-chain creation first
+    // Try on-chain creation if wallet is connected and contract is ready
     if (state.web3.contractReady && state.web3.connected) {
       const submitBtn = form.querySelector('button[type="submit"]');
       if (submitBtn) {
