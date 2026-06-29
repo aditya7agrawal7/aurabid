@@ -1364,10 +1364,10 @@ function setupContractEventListeners() {
       item.currentBid = amountUsd;
 
       if (isUserWinner) {
-        showToast("YOU WON!", `You won "${item.title}" for $${amountUsd.toLocaleString()}! Click "Pay Now" on the card to complete payment.`, "success");
+        showToast("YOU WON!", `You won "${item.title}"! Redirecting to payment...`, "success");
         playSoundWin();
         triggerConfetti();
-        logActivity(`🏆 YOU WON "${item.title}" for $${amountUsd.toLocaleString()}! Go to payment.`, 'win');
+        logActivity(`🏆 YOU WON "${item.title}" for $${amountUsd.toLocaleString()}! Redirecting to payment.`, 'win');
         storeTransaction({
           type: 'settlement',
           auctionId: Number(auctionId),
@@ -1379,6 +1379,10 @@ function setupContractEventListeners() {
           from: winner,
           isUserWinner: true
         });
+        // Auto-redirect to payment page
+        setTimeout(() => {
+          window.location.href = `payment.html?id=${auctionId}`;
+        }, 2500);
       } else {
         showToast("Auction Ended", `"${item.title}" won by ${winnerShort}`, "info");
       }
@@ -1956,11 +1960,33 @@ function executeTimerTick() {
       logActivity(`🏁 Auction ended: "${item.title}" won by ${winnerName} for $${winningAmount.toLocaleString()}`, 'win');
 
       if (winnerName === 'You') {
-        // User Wins: clear escrow balance locks, they successfully purchase the item
         delete state.heldEscrows[item.id];
-        showToast("CONGRATULATIONS!", `You won "${item.title}" for $${winningAmount.toLocaleString()}!`, "success");
         playSoundWin();
         triggerConfetti();
+
+        // For on-chain auctions, redirect to payment page
+        if (item.onChainId !== undefined) {
+          showToast("CONGRATULATIONS!", `You won "${item.title}"! Redirecting to payment...`, "success");
+          logActivity(`🏆 YOU WON "${item.title}" for $${winningAmount.toLocaleString()}!`, 'win');
+          storeTransaction({
+            type: 'settlement',
+            auctionId: item.onChainId,
+            title: item.title,
+            amount: winningAmount,
+            ethAmount: usdToEth(winningAmount),
+            txHash: '',
+            timestamp: Date.now(),
+            from: state.web3.address,
+            isUserWinner: true
+          });
+          setTimeout(() => {
+            window.location.href = `payment.html?id=${item.onChainId}`;
+          }, 2500);
+        } else {
+          // Demo mode win
+          showToast("CONGRATULATIONS!", `You won "${item.title}" for $${winningAmount.toLocaleString()}!`, "success");
+          logActivity(`🏆 YOU WON "${item.title}" for $${winningAmount.toLocaleString()}!`, 'win');
+        }
       } else {
         // Bots win: If user had an active bid in progress (but wasn't winning, which shouldn't happen because they're outbid and refunded, but safety check)
         if (state.heldEscrows[item.id]) {
