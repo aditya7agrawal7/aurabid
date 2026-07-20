@@ -149,6 +149,9 @@ https://stellar.expert/explorer/testnet/contract/<YOUR_CONTRACT_ID>
 ---
 
 ## Test Results
+<img width="1464" height="882" alt="Screenshot 2026-07-20 at 10 29 39 AM" src="https://github.com/user-attachments/assets/4fcd09e1-1bbe-47ff-9408-45a5a4af6c8d" />
+<img width="1454" height="915" alt="Screenshot 2026-07-20 at 10 29 55 AM" src="https://github.com/user-attachments/assets/0fdda541-93fa-45ac-ae8a-7a57dd6ae770" />
+
 
 ```
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
@@ -164,9 +167,7 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 | `test_cancel_auction` | Seller cancels auction |
 | `test_invalid_duration` | Verifies invalid duration is rejected |
 
-<img width="1423" height="699" alt="Screenshot 2026-06-29 at 10 17 44 PM" src="https://github.com/user-attachments/assets/1f891e47-189c-4076-b762-1b0215b292d3" />
-<img width="342" height="411" alt="Screenshot 2026-06-29 at 10 15 46 PM" src="https://github.com/user-attachments/assets/e953708c-3c66-4ef8-a6eb-ef9ea99cc807" />
-<img width="1426" height="718" alt="Screenshot 2026-06-29 at 10 15 23 PM" src="https://github.com/user-attachments/assets/7cf60fa4-af99-4bee-a917-dee95bcb1c16" />
+
 
 ---
 
