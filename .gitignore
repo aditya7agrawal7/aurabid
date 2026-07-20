@@ -4,7 +4,14 @@ cache/
 artifacts/
 coverage/
 coverage.json
+chain/
 typechain-types/
+
+# Rust/Soroban
+/target/
+Cargo.lock
+*.wasm
+test_snapshots/
 
 # OS files
 .DS_Store
