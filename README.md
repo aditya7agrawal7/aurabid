@@ -2,9 +2,7 @@
 
 A decentralized auction smart contract built on Stellar using Soroban. Users can create auctions, place bids with anti-snipe protection, and settle auctions entirely on-chain.
 
-------------------------------------------------------------------------------------------------------------------------------------------------
-deployed live on-https://6a429c12cf79694da05091a3--serene-fudge-e96cca.netlify.app/
-------------------------------------------------------------------------------------------------------------------------------------------------
+---
 
 ## Architecture
 
